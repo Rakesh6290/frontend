@@ -1,32 +1,39 @@
-import axios from "axios";
+import axios from 'axios'
 
-// Vite environment variable
-const baseURL = import.meta.env.VITE_API_URL;
+const baseURL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api/v1'
 
-const axiosInstance = axios.create({
-  baseURL: baseURL,
-  timeout: 15000,
-});
+const api = axios.create({ baseURL, timeout: 15000 })
 
-// Attach JWT token automatically
-axiosInstance.interceptors.request.use((config) => {
-  const token = localStorage.getItem("access_token");
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('access_token')
+  if (token) config.headers.Authorization = `Bearer ${token}`
+  return config
+})
 
-// Handle 401 (token expired)
-axiosInstance.interceptors.response.use(
-  (res) => res,
-  (err) => {
-    if (err.response?.status === 401) {
-      localStorage.removeItem("access_token");
-      window.location.href = "/login";
+api.interceptors.response.use(
+  res => res,
+  async (err) => {
+    const originalRequest = err.config
+    if (err.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true
+      const refresh = localStorage.getItem('refresh_token')
+      if (refresh) {
+        try {
+          const r = await axios.post(`${baseURL}/auth/token/refresh/`, { refresh })
+          localStorage.setItem('access_token', r.data.access)
+          originalRequest.headers.Authorization = `Bearer ${r.data.access}`
+          return axios(originalRequest)
+        } catch {
+          localStorage.clear()
+          window.location.href = '/login'
+        }
+      } else {
+        localStorage.clear()
+        window.location.href = '/login'
+      }
     }
-    return Promise.reject(err);
+    return Promise.reject(err)
   }
-);
+)
 
-export default axiosInstance;
+export default api
